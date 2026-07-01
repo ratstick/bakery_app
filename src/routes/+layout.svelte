@@ -37,12 +37,14 @@
 </script>
 
 {#if checked}
-  {#if session}
-    <nav>
-      <span>Bakery App</span>
-      <button onclick={handleLogout}>Log Out</button>
-    </nav>
-  {/if}
+{#if session}
+  <nav>
+    <span>Bakery App</span>
+    <a href="/ingredients">Ingredients</a>
+    <a href="/recipes">Recipes</a>
+    <button onclick={handleLogout}>Log Out</button>
+  </nav>
+{/if}
 
   {@render children()}
 {/if}

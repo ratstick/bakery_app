@@ -60,7 +60,7 @@
         is_liquid: isLiquid,
         package_qty: numOrNull(packageQty),
         package_unit: packageQty ? packageUnit : null,
-        label_serving_g: numOrNull(labelServingG)
+        label_serving_g: numOrNull(labelServingG),
 
         energy_kcal: per100g(energyKcal, labelServingG),
         fat_g: per100g(fatG, labelServingG),
@@ -161,7 +161,7 @@
   </fieldset>
 
   <fieldset>
-    <legend>Nutrition (as shown on the label, per {labelServingG || '...'}g serving</legend>
+    <legend>Nutrition (as shown on the label, per {labelServingG || '...'}g serving)</legend>
 
     <label>Serving size on label (grams)<input type="number" step="any" bind:value={labelServingG} required /></label>
     <label>Energy (kcal) <input type="number" step="any" bind:value={energyKcal} /></label>

@@ -9,6 +9,7 @@
   let loading = $state(true);
   let saving = $state(false);
   let errorMessage = $state('');
+  let archived = $state(false);
 
   // Ingredient fields
   let name = $state('');
@@ -84,6 +85,7 @@
     isLiquid = ingredient.is_liquid;
     packageQty = valOrEmpty(ingredient.package_qty);
     packageUnit = ingredient.package_unit || 'g';
+    archived = ingredient.archived;
 
     labelServingG = valOrEmpty(ingredient.label_serving_g);
 
@@ -181,6 +183,19 @@
     saving = false;
     goto('/ingredients');
   }
+  async function handleToggleArchive() {
+  const { error } = await supabase
+    .from('ingredients')
+    .update({ archived: !archived })
+    .eq('id', ingredientId);
+
+  if (error) {
+    errorMessage = error.message;
+    return;
+  }
+
+  archived = !archived;
+}
 </script>
 
 <h1>Edit Ingredient</h1>
@@ -258,8 +273,12 @@
       <p class="error">{errorMessage}</p>
     {/if}
 
-    <button type="submit" disabled={saving}>
-      {saving ? 'Saving...' : 'Save Changes'}
-    </button>
+<button type="submit" disabled={saving}>
+  {saving ? 'Saving...' : 'Save Changes'}
+</button>
+
+<button type="button" onclick={handleToggleArchive}>
+  {archived ? 'Unarchive this ingredient' : 'Archive this ingredient'}
+</button>
   </form>
 {/if}

@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { supabase } from '$lib/supabase.js';
-  import { toBaseUnit, VOLUME_UNITS, WEIGHT_UNITS } from '$lib/units.js';
+  import { toBaseUnitForIngredient, unitsForIngredient } from '$lib/units.js';
   import { findDuplicateGroups } from '$lib/duplicateCheck.js';
 
   const recipeId = $page.params.id;
@@ -15,6 +15,7 @@
 
   let loading = $state(true);
   let errorMessage = $state('');
+  let inventoryByIngredient = $state({}); // ingredient_id -> quantity_g on hand, for the current user
 
   // Save-swap panel state
   let showSavePanel = $state(false);
@@ -70,18 +71,28 @@
 
     originalIngredientIds = new Map(rows.map((r) => [r.id, r.ingredient_id]));
 
+    // RLS already scopes this to the current user — this is only your own stock.
+    const { data: inventoryData } = await supabase
+      .from('inventory')
+      .select('*')
+      .in('ingredient_id', ingredientIds);
+
+    inventoryByIngredient = Object.fromEntries(
+      (inventoryData ?? []).map((inv) => [inv.ingredient_id, inv.quantity_g])
+    );
+
     loading = false;
   });
 
   // Swapping an ingredient: look up the new ingredient's full record,
   // fetch (or reuse a cached) cost entry for it, and reset the unit
-  // if the new ingredient is a different "kind" (solid vs liquid) —
-  // grams and milliliters aren't interchangeable, so we can't safely
-  // carry over the old quantity/unit across that boundary.
+  // if it isn't valid for the new ingredient (e.g. the old ingredient
+  // supported "each" but the new one doesn't) — we can't safely carry
+  // a unit across to an ingredient that doesn't support it.
   async function handleSwap(index, newIngredientId) {
     const newIngredient = allIngredients.find((i) => i.id === newIngredientId);
     const oldRow = rows[index];
-    const unitTypeChanged = oldRow.ingredients.is_liquid !== newIngredient.is_liquid;
+    const unitStillValid = unitsForIngredient(newIngredient).includes(oldRow.display_unit);
 
     let cost = rows.find((r) => r.ingredient_id === newIngredientId)?.cost ?? null;
     if (!cost) {
@@ -98,15 +109,15 @@
       ingredient_id: newIngredientId,
       ingredients: newIngredient,
       cost,
-      display_unit: unitTypeChanged ? '' : oldRow.display_unit,
-      display_qty: unitTypeChanged ? '' : oldRow.display_qty
+      display_unit: unitStillValid ? oldRow.display_unit : '',
+      display_qty: unitStillValid ? oldRow.display_qty : ''
     };
     rows = [...rows]; // trigger reactivity
   }
 
   function unitsFor(ingredient) {
     if (!ingredient) return [];
-    return ingredient.is_liquid ? VOLUME_UNITS : WEIGHT_UNITS;
+    return unitsForIngredient(ingredient);
   }
 
   function resolvePackageSize(ingredient, cost) {
@@ -121,7 +132,7 @@
   function rowQuantityG(row) {
     if (!row.display_qty || !row.display_unit) return null;
     try {
-      return toBaseUnit(Number(row.display_qty), row.display_unit, row.ingredients.is_liquid);
+      return toBaseUnitForIngredient(Number(row.display_qty), row.display_unit, row.ingredients);
     } catch {
       return null;
     }
@@ -132,6 +143,15 @@
     const perHundred = row.ingredients[field];
     if (qtyG === null || perHundred === null || perHundred === undefined) return null;
     return (perHundred * qtyG) / 100;
+  }
+
+  // How much more of this ingredient is needed than you currently have
+  // in stock, or null if you have enough (or the quantity isn't valid yet).
+  function stockShortfall(row) {
+    const needed = rowQuantityG(row);
+    if (needed === null) return null;
+    const have = inventoryByIngredient[row.ingredient_id] ?? 0;
+    return needed > have ? { needed, have } : null;
   }
 
   function costContribution(row) {
@@ -309,6 +329,11 @@
 
           {#if !row.cost}<em>(no price entered)</em>{/if}
           {#if rowQuantityG(row) === null}<em class="warning">(pick a valid unit)</em>{/if}
+          {#if stockShortfall(row)}
+            <em class="warning">
+              (not enough on hand — have {stockShortfall(row).have.toFixed(0)}g, need {stockShortfall(row).needed.toFixed(0)}g)
+            </em>
+          {/if}
         </li>
       {/each}
     </ul>

@@ -1,4 +1,4 @@
-import { toBaseUnit } from "./units.js";
+import { toBaseUnitForIngredient } from "./units.js";
 
 // Finds rows that share the same ingredient + component combination.
 // Returns an array of arrays, where each inner array is a group of
@@ -21,12 +21,12 @@ export function findDuplicateGroups(rows) {
 // mismatched display units (e.g. one in grams, one in ounces) still
 // add up correctly, then re-expresses the result in the first row's
 // display unit for consistency.
-export function mergeRows(rowA, rowB, isLiquid) {
+export function mergeRows(rowA, rowB, ingredient) {
   const totalBase =
-    toBaseUnit(Number(rowA.display_qty), rowA.display_unit, isLiquid) +
-    toBaseUnit(Number(rowB.display_qty), rowB.display_unit, isLiquid);
+    toBaseUnitForIngredient(Number(rowA.display_qty), rowA.display_unit, ingredient) +
+    toBaseUnitForIngredient(Number(rowB.display_qty), rowB.display_unit, ingredient);
 
-  const factor = toBaseUnit(1, rowA.display_unit, isLiquid);
+  const factor = toBaseUnitForIngredient(1, rowA.display_unit, ingredient);
   const mergedQty = totalBase / factor;
 
   return {

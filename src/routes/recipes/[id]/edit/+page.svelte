@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { supabase } from '$lib/supabase.js';
-  import { toBaseUnit, VOLUME_UNITS, WEIGHT_UNITS } from '$lib/units.js';
+  import { toBaseUnitForIngredient, unitsForIngredient } from '$lib/units.js';
   import { findDuplicateGroups, mergeRows } from '$lib/duplicateCheck.js';
 
   const recipeId = $page.params.id;
@@ -25,7 +25,7 @@
   onMount(async () => {
     const { data: ingredientsList } = await supabase
       .from('ingredients')
-      .select('id, name, is_liquid')
+      .select('*')
       .order('name');
     allIngredients = ingredientsList ?? [];
 
@@ -76,7 +76,7 @@
     const [firstIndex, secondIndex] = groupIndexes;
     const ingredient = allIngredients.find((i) => i.id === rows[firstIndex].ingredient_id);
 
-    const merged = mergeRows(rows[firstIndex], rows[secondIndex], ingredient.is_liquid);
+    const merged = mergeRows(rows[firstIndex], rows[secondIndex], ingredient);
 
     rows = rows.filter((_, i) => i !== firstIndex && i !== secondIndex);
     rows = [...rows, merged];
@@ -88,7 +88,7 @@
   function unitsFor(ingredientId) {
     const ingredient = allIngredients.find((i) => i.id === ingredientId);
     if (!ingredient) return [];
-    return ingredient.is_liquid ? VOLUME_UNITS : WEIGHT_UNITS;
+    return unitsForIngredient(ingredient);
   }
 
   async function handleSave() {
@@ -125,7 +125,7 @@
     const preparedRows = rows.map((row) => {
       const ingredient = allIngredients.find((i) => i.id === row.ingredient_id);
       try {
-        const quantity_g = toBaseUnit(Number(row.display_qty), row.display_unit, ingredient.is_liquid);
+        const quantity_g = toBaseUnitForIngredient(Number(row.display_qty), row.display_unit, ingredient);
         return { ...row, quantity_g };
       } catch (err) {
         conversionError = err.message;

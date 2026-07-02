@@ -39,6 +39,8 @@
   let calciumMg = $state('');
   let ironMg = $state('');
   let potassiumMg = $state('');
+  let gramsPerCup = $state('');
+  let gramsPerEach = $state('');
 
   // Your cost entry (may not exist yet)
   let costId = $state(null);
@@ -102,6 +104,8 @@
     calciumMg = fromPer100g(ingredient.calcium_mg, labelServingG);
     ironMg = fromPer100g(ingredient.iron_mg, labelServingG);
     potassiumMg = fromPer100g(ingredient.potassium_mg, labelServingG);
+    gramsPerCup = valOrEmpty(ingredient.grams_per_cup);
+    gramsPerEach = valOrEmpty(ingredient.grams_per_each);
 
     // RLS already scopes this to the current user — no manual filter needed.
     const { data: cost } = await supabase
@@ -225,6 +229,13 @@
           <option value="ml">milliliters</option>
         </select>
       </label>
+      <label>Grams per cup <em>(optional — lets this be measured in cups/tbsp/tsp, e.g. flour)</em>
+ <input type="number" step="any" bind:value={gramsPerCup} />
+</label>
+<label>
+  Average grams per each <em>(optional — for count-based ingredients like eggs)</em>
+  <input type="number" step="any" bind:value={gramsPerEach} />
+</label>
     </fieldset>
 
     <fieldset>

@@ -26,6 +26,8 @@
   let calciumMg = $state('');
   let ironMg = $state('');
   let potassiumMg = $state('');
+  let gramsPerCup = $state('');
+  let gramsPerEach = $state('');
 
   // --- Your price (private) ---
   let purchasePrice = $state('');
@@ -35,6 +37,8 @@
 
   let errorMessage = $state('');
   let saving = $state(false);
+
+  
 
   // Convert empty strings to null so optional numeric fields
   // don't get stored as invalid numbers in Postgres.
@@ -74,7 +78,9 @@
         vitamin_d_mcg: per100g(vitaminDMcg, labelServingG),
         calcium_mg: per100g(calciumMg, labelServingG),
         iron_mg: per100g(ironMg, labelServingG),
-        potassium_mg: per100g(potassiumMg, labelServingG)
+        potassium_mg: per100g(potassiumMg, labelServingG),
+        grams_per_cup: numOrNull(gramsPerCup),
+        grams_per_each: numOrNull(gramsPerEach),
       })
       .select()
       .single();
@@ -158,6 +164,14 @@
         <option value="ml">milliliters</option>
       </select>
     </label>
+    <label>
+  Grams per cup <em>(optional — lets this be measured in cups/tbsp/tsp, e.g. flour)</em>
+  <input type="number" step="any" bind:value={gramsPerCup} />
+</label>
+<label>
+  Average grams per each <em>(optional — for count-based ingredients like eggs)</em>
+  <input type="number" step="any" bind:value={gramsPerEach} />
+</label>
   </fieldset>
 
   <fieldset>

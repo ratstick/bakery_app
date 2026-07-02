@@ -43,6 +43,8 @@
     <span>Bakery App</span>
     <a href="/ingredients">Ingredients</a>
     <a href="/recipes">Recipes</a>
+    <a href="/inventory">Inventory</a>
+    <span class="logged-in-as">Logged in as: {session.user.email}</span>
     <button onclick={handleLogout}>Log Out</button>
   </nav>
 {/if}

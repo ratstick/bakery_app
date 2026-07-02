@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { supabase } from '$lib/supabase.js';
-  import { toBaseUnit, VOLUME_UNITS, WEIGHT_UNITS } from '$lib/units.js';
+  import { toBaseUnitForIngredient, unitsForIngredient } from '$lib/units.js';
   import { findDuplicateGroups, mergeRows } from '$lib/duplicateCheck.js';
 
   let name = $state('');
@@ -33,7 +33,7 @@ let quickAddError = $state('');
   onMount(async () => {
     const { data } = await supabase
       .from('ingredients')
-      .select('id, name, is_liquid')
+      .select('*')
       .order('name');
     allIngredients = data ?? [];
   });
@@ -49,7 +49,7 @@ function handleMerge(groupIndexes) {
   const [firstIndex, secondIndex] = groupIndexes;
   const ingredient = allIngredients.find((i) => i.id === rows[firstIndex].ingredient_id);
 
-  const merged = mergeRows(rows[firstIndex], rows[secondIndex], ingredient.is_liquid);
+  const merged = mergeRows(rows[firstIndex], rows[secondIndex], ingredient);
 
   rows = rows.filter((_, i) => i !== firstIndex && i !== secondIndex);
   rows = [...rows, merged];
@@ -57,7 +57,7 @@ function handleMerge(groupIndexes) {
   function unitsFor(ingredientId) {
     const ingredient = allIngredients.find((i) => i.id === ingredientId);
     if (!ingredient) return [];
-    return ingredient.is_liquid ? VOLUME_UNITS : WEIGHT_UNITS;
+    return unitsForIngredient(ingredient);
   }
 async function handleQuickAdd() {
   quickAddError = '';
@@ -76,7 +76,7 @@ async function handleQuickAdd() {
       category: quickAddCategory || null,
       is_liquid: quickAddIsLiquid
     })
-    .select('id, name, is_liquid')
+    .select('*')
     .single();
 
   quickAddSaving = false;
@@ -134,7 +134,7 @@ async function handleQuickAdd() {
     const ingredientRows = rows.map((row) => {
       const ingredient = allIngredients.find((i) => i.id === row.ingredient_id);
       try {
-        const quantity_g = toBaseUnit(Number(row.display_qty), row.display_unit, ingredient.is_liquid);
+        const quantity_g = toBaseUnitForIngredient(Number(row.display_qty), row.display_unit, ingredient);
         return {
           recipe_id: recipe.id,
           ingredient_id: row.ingredient_id,

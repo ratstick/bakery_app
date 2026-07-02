@@ -6,9 +6,9 @@ Built for a real client (a Toronto-based cottage bakery) on a $0 budget, using o
 
 ## Status
 
-Core functionality is complete and usable: ingredient management (manual entry, per-100g nutrition normalization, private per-user pricing), recipe management with kitchen-unit conversion, live ingredient swapping with recalculated nutrition/cost, duplicate-ingredient handling, and a printable CFIA-format nutrition label with an editable-values-before-printing flow and a print audit trail.
+**Live and in beta testing.** Every feature from the original project scope is built and working: ingredient management (manual entry, per-100g nutrition normalization, private per-user pricing, flexible units including cups/tbsp for solids and count-based ingredients like eggs, soft-delete archiving), recipe management with kitchen-unit conversion and duplicate-ingredient handling (rename or merge), live ingredient swapping with recalculated nutrition/cost, a printable CFIA-format nutrition label with an editable-values-before-printing flow and a print audit trail, and per-user inventory tracking with "not enough on hand" warnings on recipes.
 
-**Not yet built:** barcode scanning, inventory/stock tracking, Open Food Facts / nutrient database integrations, a USDA/FDA label format, public sign-up (currently invite-only via manual account creation), and password reset.
+**Not yet built:** barcode scanning, Open Food Facts / nutrient database integrations, a USDA/FDA label format, public sign-up (currently invite-only via manual account creation), and password reset.
 
 **Note on the nutrition label:** it uses the correct CFIA nutrients, layout, and % Daily Value formulas, but does not yet implement Health Canada's official per-nutrient rounding rules. It's intended as a strong starting point, not a certified-compliant label — see the disclaimer printed on the label itself, and the AI Usage statement below.
 
@@ -38,14 +38,9 @@ PUBLIC_SUPABASE_URL=your_project_url
 PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 ```
 
-Set up your Supabase project's database by running the SQL files in [`supabase/sql/`](supabase/sql/) against it, **in order**, using the Supabase SQL Editor:
+Set up your Supabase project's database by running [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor — one file, sets up the complete current schema (tables, RLS, grants, indexes) in one shot.
 
-1. `001_initial_schema.sql` — core tables, RLS, grants, indexes
-2. `002_multi_user_rls.sql` — per-user ownership for recipes/inventory
-3. `003_shared_ingredient_costs.sql` — private per-user ingredient pricing
-4. `004_ingredient_brand_category_package.sql` — ingredient metadata
-5. `005_label_serving_g.sql` — label-based nutrition entry support
-6. `006_label_overrides.sql` — print audit trail for the CFIA label
+If you're curious how the schema got here, or want to understand the reasoning behind individual decisions, the full incremental history is preserved in [`supabase/sql/`](supabase/sql/) as 10 numbered migration files (`001` through `010`), each with comments explaining why that change was made. You don't need to run these for a fresh setup — `schema.sql` already reflects their combined end result.
 
 In your Supabase project settings, make sure **"Automatically expose new tables"** is turned **off** — this project relies on explicit Row Level Security policies rather than blanket table exposure (see the comments in `001_initial_schema.sql` for why this also affects baseline grants).
 
@@ -54,6 +49,19 @@ Then start the dev server:
 ```bash
 npm run dev
 ```
+
+## Deployment
+
+Deployed on **Cloudflare Pages**, connected directly to this GitHub repo.
+
+- **Build command:** `npm run build`
+- **Build output directory:** `build`
+- **Environment variables:** the same `PUBLIC_SUPABASE_URL` / `PUBLIC_SUPABASE_PUBLISHABLE_KEY` as local dev, plus `NODE_VERSION=24` (see note below)
+- When creating the project in Cloudflare's dashboard, make sure you're in the **Pages** flow specifically, not the newer unified "Workers" flow — the Workers path expects a `wrangler.toml` and isn't what this static site needs.
+
+**Node version note:** `@zxing/browser` (installed for future barcode-scanning support, not yet used) has a dependency requiring Node 24+. Cloudflare's default build image is older, so `NODE_VERSION=24` must be set explicitly as an environment variable in the Pages project settings, or the build will fail during `npm install`.
+
+**Filename case-sensitivity note:** this repo is developed primarily on Windows, which is case-insensitive for filenames — Cloudflare's Linux build environment is not. If a deploy fails with a "file not found" error for a file that clearly exists, check that the actual filename case matches its import statements exactly.
 
 ## AI Usage & Diligence Statement
 

@@ -1,16 +1,32 @@
 <script>
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
   import { supabase } from '$lib/supabase.js';
+  import { toBaseUnit, VOLUME_UNITS, WEIGHT_UNITS } from '$lib/units.js';
+  import { findDuplicateGroups } from '$lib/duplicateCheck.js';
 
   const recipeId = $page.params.id;
 
   let recipe = $state(null);
-  let rows = $state([]); // recipe_ingredients joined with ingredient + cost data
+  let rows = $state([]); // { id, ingredient_id, component, display_qty, display_unit, ingredients, cost }
+  let allIngredients = $state([]); // full ingredient records, for the swap dropdown + nutrition math
+  let originalIngredientIds = new Map(); // row.id -> the ingredient it had on load, used to detect swaps
+
   let loading = $state(true);
   let errorMessage = $state('');
 
+  // Save-swap panel state
+  let showSavePanel = $state(false);
+  let saveMode = $state('overwrite'); // 'overwrite' | 'new'
+  let newRecipeName = $state('');
+  let saving = $state(false);
+  let saveSuccess = $state(null); // { recipeId, mode: 'new' | 'overwrite' } or null after a successful save
+
   onMount(async () => {
+    const { data: allIngredientsData } = await supabase.from('ingredients').select('*').order('name');
+    allIngredients = allIngredientsData ?? [];
+
     const { data: recipeData, error: recipeError } = await supabase
       .from('recipes')
       .select('*')
@@ -23,8 +39,8 @@
       return;
     }
     recipe = recipeData;
+    newRecipeName = `${recipe.name} (variant)`;
 
-    // Pull each recipe_ingredients row with the full ingredient record nested in it
     const { data: riData, error: riError } = await supabase
       .from('recipe_ingredients')
       .select('*, ingredients(*)')
@@ -36,45 +52,97 @@
       return;
     }
 
-    // Pull your private cost entries for just the ingredients in this recipe
     const ingredientIds = riData.map((r) => r.ingredient_id);
     const { data: costData } = await supabase
       .from('user_ingredient_costs')
       .select('*')
       .in('ingredient_id', ingredientIds);
 
-    // Merge cost data onto each row by ingredient_id
     rows = riData.map((row) => ({
-      ...row,
+      id: row.id,
+      ingredient_id: row.ingredient_id,
+      component: row.component,
+      display_qty: row.display_qty,
+      display_unit: row.display_unit,
+      ingredients: row.ingredients,
       cost: costData?.find((c) => c.ingredient_id === row.ingredient_id) ?? null
     }));
+
+    originalIngredientIds = new Map(rows.map((r) => [r.id, r.ingredient_id]));
 
     loading = false;
   });
 
-  // Resolves the package size to use for cost math: shared package size
-  // wins if it exists, otherwise fall back to what the user entered
-  // themselves when they priced this ingredient.
+  // Swapping an ingredient: look up the new ingredient's full record,
+  // fetch (or reuse a cached) cost entry for it, and reset the unit
+  // if the new ingredient is a different "kind" (solid vs liquid) —
+  // grams and milliliters aren't interchangeable, so we can't safely
+  // carry over the old quantity/unit across that boundary.
+  async function handleSwap(index, newIngredientId) {
+    const newIngredient = allIngredients.find((i) => i.id === newIngredientId);
+    const oldRow = rows[index];
+    const unitTypeChanged = oldRow.ingredients.is_liquid !== newIngredient.is_liquid;
+
+    let cost = rows.find((r) => r.ingredient_id === newIngredientId)?.cost ?? null;
+    if (!cost) {
+      const { data } = await supabase
+        .from('user_ingredient_costs')
+        .select('*')
+        .eq('ingredient_id', newIngredientId)
+        .maybeSingle();
+      cost = data;
+    }
+
+    rows[index] = {
+      ...oldRow,
+      ingredient_id: newIngredientId,
+      ingredients: newIngredient,
+      cost,
+      display_unit: unitTypeChanged ? '' : oldRow.display_unit,
+      display_qty: unitTypeChanged ? '' : oldRow.display_qty
+    };
+    rows = [...rows]; // trigger reactivity
+  }
+
+  function unitsFor(ingredient) {
+    if (!ingredient) return [];
+    return ingredient.is_liquid ? VOLUME_UNITS : WEIGHT_UNITS;
+  }
+
   function resolvePackageSize(ingredient, cost) {
     if (ingredient.package_qty) return ingredient.package_qty;
     return cost?.purchase_qty ?? null;
   }
 
+  // Computes this row's quantity in canonical grams/ml on the fly from
+  // whatever display_qty/display_unit currently is — rather than
+  // trusting a stored quantity_g, since a swap can leave the unit
+  // temporarily invalid (empty) until the user picks a new one.
+  function rowQuantityG(row) {
+    if (!row.display_qty || !row.display_unit) return null;
+    try {
+      return toBaseUnit(Number(row.display_qty), row.display_unit, row.ingredients.is_liquid);
+    } catch {
+      return null;
+    }
+  }
+
   function nutrientContribution(row, field) {
+    const qtyG = rowQuantityG(row);
     const perHundred = row.ingredients[field];
-    if (perHundred === null || perHundred === undefined) return null;
-    return (perHundred * row.quantity_g) / 100;
+    if (qtyG === null || perHundred === null || perHundred === undefined) return null;
+    return (perHundred * qtyG) / 100;
   }
 
   function costContribution(row) {
-    if (!row.cost) return null;
+    const qtyG = rowQuantityG(row);
+    if (qtyG === null || !row.cost) return null;
     const packageSize = resolvePackageSize(row.ingredients, row.cost);
     if (!packageSize) return null;
     const costPer100 = (row.cost.purchase_price / packageSize) * 100;
-    return (costPer100 * row.quantity_g) / 100;
+    return (costPer100 * qtyG) / 100;
   }
 
-  // Reactive totals — recalculate automatically any time `rows` changes
   const nutritionFields = [
     'energy_kcal', 'fat_g', 'saturated_fat_g', 'trans_fat_g',
     'carbohydrate_g', 'fibre_g', 'sugars_g', 'protein_g',
@@ -92,9 +160,7 @@
 
   let totalCost = $derived.by(() => {
     const values = rows.map(costContribution).filter((v) => v !== null);
-    const knownCount = values.length;
-    const total = values.reduce((a, b) => a + b, 0);
-    return { total, isPartial: knownCount < rows.length };
+    return { total: values.reduce((a, b) => a + b, 0), isPartial: values.length < rows.length };
   });
 
   let perServing = $derived.by(() => {
@@ -103,13 +169,9 @@
     for (const field of nutritionFields) {
       nutrition[field] = totals[field] === null ? null : totals[field] / recipe.servings;
     }
-    return {
-      nutrition,
-      cost: totalCost.total / recipe.servings
-    };
+    return { nutrition, cost: totalCost.total / recipe.servings };
   });
 
-  // Group rows by component for display — empty string = no component
   let grouped = $derived.by(() => {
     const groups = {};
     for (const row of rows) {
@@ -119,40 +181,189 @@
     }
     return groups;
   });
+
+  // True if any row's ingredient no longer matches what was loaded —
+  // this is what decides whether "Save this swap" appears at all.
+  let hasSwap = $derived(rows.some((r) => originalIngredientIds.get(r.id) !== r.ingredient_id));
+
+  let duplicateGroups = $derived(
+    findDuplicateGroups(rows.map((r) => ({ ingredient_id: r.ingredient_id, component: r.component })))
+  );
+
+  async function handleSaveSwap() {
+    errorMessage = '';
+
+    if (duplicateGroups.length > 0) {
+      errorMessage = 'This swap creates a duplicate ingredient in the same component. Go to Edit Recipe to rename or merge it before saving.';
+      return;
+    }
+
+    if (rows.some((r) => rowQuantityG(r) === null)) {
+      errorMessage = 'One of the swapped ingredients is missing a valid quantity/unit. Fix it before saving.';
+      return;
+    }
+
+    saving = true;
+
+    if (saveMode === 'overwrite') {
+      for (const row of rows) {
+        const { error } = await supabase
+          .from('recipe_ingredients')
+          .update({
+            ingredient_id: row.ingredient_id,
+            display_qty: Number(row.display_qty),
+            display_unit: row.display_unit,
+            quantity_g: rowQuantityG(row)
+          })
+          .eq('id', row.id);
+
+        if (error) {
+          errorMessage = error.message;
+          saving = false;
+          return;
+        }
+      }
+
+      originalIngredientIds = new Map(rows.map((r) => [r.id, r.ingredient_id]));
+      showSavePanel = false;
+      saving = false;
+      saveSuccess = { recipeId: recipe.id, mode: 'overwrite' };
+      return;
+    }
+
+    // saveMode === 'new': clone the recipe under a new name, with the swapped ingredients
+    const { data: newRecipe, error: newRecipeError } = await supabase
+      .from('recipes')
+      .insert({
+        name: newRecipeName,
+        servings: recipe.servings,
+        serving_size_g: recipe.serving_size_g,
+        notes: recipe.notes
+      })
+      .select()
+      .single();
+
+    if (newRecipeError) {
+      errorMessage = newRecipeError.message;
+      saving = false;
+      return;
+    }
+
+    const { error: insertError } = await supabase.from('recipe_ingredients').insert(
+      rows.map((row) => ({
+        recipe_id: newRecipe.id,
+        ingredient_id: row.ingredient_id,
+        component: row.component,
+        display_qty: Number(row.display_qty),
+        display_unit: row.display_unit,
+        quantity_g: rowQuantityG(row)
+      }))
+    );
+
+    if (insertError) {
+      errorMessage = insertError.message;
+      saving = false;
+      return;
+    }
+
+    saving = false;
+    showSavePanel = false;
+    saveSuccess = { recipeId: newRecipe.id, mode: 'new' };
+  }
 </script>
 
 {#if loading}
   <p>Loading...</p>
-{:else if errorMessage}
+{:else if errorMessage && !recipe}
   <p class="error">{errorMessage}</p>
 {:else}
-    <h1>{recipe.name}</h1>
-    <p><a href="/recipes/{recipe.id}/edit">Edit this recipe</a></p>
+  <h1>{recipe.name}</h1>
+  <p>{recipe.servings} servings &middot; {recipe.serving_size_g}g per serving</p>
   {#if recipe.notes}<p>{recipe.notes}</p>{/if}
-
+  <p><a href="/recipes/{recipe.id}/edit">Edit this recipe</a></p>
+  <p><a href="/recipes/{recipe.id}/label">Print Label</a></p>
   <h2>Ingredients</h2>
   {#each Object.entries(grouped) as [component, componentRows]}
     {#if component !== '(main)'}<h3>{component}</h3>{/if}
     <ul>
       {#each componentRows as row}
+        {@const rowIndex = rows.indexOf(row)}
         <li>
-          {row.display_qty} {row.display_unit} {row.ingredients.name}
-          {#if !row.cost}
-            <em>(no price entered)</em>
-          {/if}
+          <select
+            value={row.ingredient_id}
+            onchange={(e) => handleSwap(rowIndex, e.target.value)}
+          >
+            {#each allIngredients as ingredient}
+              <option value={ingredient.id}>{ingredient.name}</option>
+            {/each}
+          </select>
+
+          <input type="number" step="any" bind:value={row.display_qty} style="width: 5em;" />
+
+          <select bind:value={row.display_unit}>
+            <option value="" disabled>unit</option>
+            {#each unitsFor(row.ingredients) as unit}
+              <option value={unit}>{unit}</option>
+            {/each}
+          </select>
+
+          {#if !row.cost}<em>(no price entered)</em>{/if}
+          {#if rowQuantityG(row) === null}<em class="warning">(pick a valid unit)</em>{/if}
         </li>
       {/each}
     </ul>
   {/each}
 
+  {#if hasSwap}
+    <p><button onclick={() => (showSavePanel = true)}>Save this swap</button></p>
+  {/if}
+
+  {#if showSavePanel}
+    <fieldset>
+      <legend>Save changes</legend>
+      <label>
+        <input type="radio" bind:group={saveMode} value="overwrite" />
+        Overwrite this recipe
+      </label>
+      <label>
+        <input type="radio" bind:group={saveMode} value="new" />
+        Save as a new recipe
+      </label>
+
+      {#if saveMode === 'new'}
+        <label>
+          New recipe name
+          <input type="text" bind:value={newRecipeName} />
+        </label>
+      {/if}
+
+      {#if errorMessage}<p class="error">{errorMessage}</p>{/if}
+
+      <button onclick={handleSaveSwap} disabled={saving}>
+        {saving ? 'Saving...' : 'Confirm Save'}
+      </button>
+      <button onclick={() => (showSavePanel = false)}>Cancel</button>
+    </fieldset>
+  {/if}
+{#if saveSuccess}
+  <fieldset>
+    <legend>{saveSuccess.mode === 'new' ? 'New recipe saved' : 'Recipe updated'}</legend>
+    <p>
+      {saveSuccess.mode === 'new'
+        ? `"${newRecipeName}" was created successfully.`
+        : 'Your changes were saved.'}
+    </p>
+    <button onclick={() => goto(`/recipes/${saveSuccess.recipeId}`)}>View Recipe</button>
+    <button onclick={() => goto(`/recipes/${saveSuccess.recipeId}/edit`)}>Edit Recipe</button>
+    <button onclick={() => (saveSuccess = null)}>Stay Here</button>
+  </fieldset>
+{/if}
   <h2>Cost</h2>
   <p>
     Total: ${totalCost.total.toFixed(2)}
     {#if totalCost.isPartial}<em>(incomplete — some ingredients have no price on file)</em>{/if}
   </p>
-  {#if perServing}
-    <p>Per serving: ${perServing.cost.toFixed(2)}</p>
-  {/if}
+  {#if perServing}<p>Per serving: ${perServing.cost.toFixed(2)}</p>{/if}
 
   <h2>Nutrition (per serving)</h2>
   {#if perServing}

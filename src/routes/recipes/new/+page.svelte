@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { supabase } from '$lib/supabase.js';
   import { toBaseUnit, VOLUME_UNITS, WEIGHT_UNITS } from '$lib/units.js';
-  import { findDuplicateGroups } from '$lib/duplicateCheck.js';
+  import { findDuplicateGroups, mergeRows } from '$lib/duplicateCheck.js';
 
   let name = $state('');
   let servings = $state('');
@@ -18,7 +18,18 @@
 
   let duplicateGroups = $derived(findDuplicateGroups(rows));
   let duplicateRowIndexes = $derived(new Set(duplicateGroups.flat()));
-
+// Quick-add: lets a baker create a brand-new ingredient without leaving
+// this page, for the "oh I forgot to add that" case. Only collects the
+// bare minimum (name, brand, category, liquid/solid) — nutrition and
+// pricing are intentionally left for later via the Ingredients page,
+// since this is meant to be fast, not thorough.
+let showQuickAdd = $state(false);
+let quickAddName = $state('');
+let quickAddBrand = $state('');
+let quickAddCategory = $state('');
+let quickAddIsLiquid = $state(false);
+let quickAddSaving = $state(false);
+let quickAddError = $state('');
   onMount(async () => {
     const { data } = await supabase
       .from('ingredients')
@@ -34,13 +45,58 @@
   function removeRow(index) {
     rows = rows.filter((_, i) => i !== index);
   }
+function handleMerge(groupIndexes) {
+  const [firstIndex, secondIndex] = groupIndexes;
+  const ingredient = allIngredients.find((i) => i.id === rows[firstIndex].ingredient_id);
 
+  const merged = mergeRows(rows[firstIndex], rows[secondIndex], ingredient.is_liquid);
+
+  rows = rows.filter((_, i) => i !== firstIndex && i !== secondIndex);
+  rows = [...rows, merged];
+}
   function unitsFor(ingredientId) {
     const ingredient = allIngredients.find((i) => i.id === ingredientId);
     if (!ingredient) return [];
     return ingredient.is_liquid ? VOLUME_UNITS : WEIGHT_UNITS;
   }
+async function handleQuickAdd() {
+  quickAddError = '';
+  if (!quickAddName.trim()) {
+    quickAddError = 'Name is required.';
+    return;
+  }
 
+  quickAddSaving = true;
+
+  const { data: newIngredient, error } = await supabase
+    .from('ingredients')
+    .insert({
+      name: quickAddName,
+      brand: quickAddBrand || null,
+      category: quickAddCategory || null,
+      is_liquid: quickAddIsLiquid
+    })
+    .select('id, name, is_liquid')
+    .single();
+
+  quickAddSaving = false;
+
+  if (error) {
+    quickAddError = error.message;
+    return;
+  }
+
+  // Add it to the dropdown and immediately create a row for it,
+  // so there's no extra step to actually use it in this recipe.
+  allIngredients = [...allIngredients, newIngredient].sort((a, b) => a.name.localeCompare(b.name));
+  rows = [...rows, { ingredient_id: newIngredient.id, component: '', display_qty: '', display_unit: '' }];
+
+  quickAddName = '';
+  quickAddBrand = '';
+  quickAddCategory = '';
+  quickAddIsLiquid = false;
+  showQuickAdd = false;
+}
   async function handleSubmit() {
     errorMessage = '';
     if (duplicateGroups.length > 0) {
@@ -170,8 +226,33 @@
       <button type="button" onclick={() => removeRow(i)}>Remove</button>
     </fieldset>
   {/each}
-
   <button type="button" onclick={addRow}>+ Add Ingredient</button>
+  <button type="button" onclick={() => (showQuickAdd = !showQuickAdd)}>+ Add New Ingredient (not in list yet)</button>
+
+  {#if showQuickAdd}
+    <fieldset>
+      <legend>Quick Add Ingredient</legend>
+      <p>
+        This just adds it to your ingredient list so you can use it right now.
+        <a href="/ingredients" target="_blank">Add nutrition facts and pricing</a> for it later.
+      </p>
+
+      <label>Name <input type="text" bind:value={quickAddName} required /></label>
+      <label>Brand <input type="text" bind:value={quickAddBrand} /></label>
+      <label>Category <input type="text" bind:value={quickAddCategory} /></label>
+      <label>
+        <input type="checkbox" bind:checked={quickAddIsLiquid} />
+        This ingredient is a liquid
+      </label>
+
+      {#if quickAddError}<p class="error">{quickAddError}</p>{/if}
+
+      <button type="button" onclick={handleQuickAdd} disabled={quickAddSaving}>
+        {quickAddSaving ? 'Adding...' : 'Add & Use in This Recipe'}
+      </button>
+      <button type="button" onclick={() => (showQuickAdd = false)}>Cancel</button>
+    </fieldset>
+  {/if}
 
   {#if errorMessage}
     <p class="error">{errorMessage}</p>

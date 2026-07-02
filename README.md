@@ -1,12 +1,16 @@
 # Bakery App
 
-A recipe management tool for cottage bakers — track ingredients, calculate CFIA-format (and USDA) nutrition facts and cost-per-portion, and manage a shared, community-editable ingredient database with private per-user pricing.
+A recipe management tool for cottage bakers — track ingredients, calculate CFIA-format nutrition facts and cost-per-portion, and manage a shared, community-editable ingredient database with private per-user pricing.
 
 Built for a real client (a Toronto-based cottage bakery) on a $0 budget, using only free tiers.
 
 ## Status
 
-Actively in development. Core recipe and ingredient management is functional; barcode scanning, inventory tracking, and printable nutrition labels are still in progress.
+Core functionality is complete and usable: ingredient management (manual entry, per-100g nutrition normalization, private per-user pricing), recipe management with kitchen-unit conversion, live ingredient swapping with recalculated nutrition/cost, duplicate-ingredient handling, and a printable CFIA-format nutrition label with an editable-values-before-printing flow and a print audit trail.
+
+**Not yet built:** barcode scanning, inventory/stock tracking, Open Food Facts / nutrient database integrations, a USDA/FDA label format, public sign-up (currently invite-only via manual account creation), and password reset.
+
+**Note on the nutrition label:** it uses the correct CFIA nutrients, layout, and % Daily Value formulas, but does not yet implement Health Canada's official per-nutrient rounding rules. It's intended as a strong starting point, not a certified-compliant label — see the disclaimer printed on the label itself, and the AI Usage statement below.
 
 ## Stack
 
@@ -41,6 +45,7 @@ Set up your Supabase project's database by running the SQL files in [`supabase/s
 3. `003_shared_ingredient_costs.sql` — private per-user ingredient pricing
 4. `004_ingredient_brand_category_package.sql` — ingredient metadata
 5. `005_label_serving_g.sql` — label-based nutrition entry support
+6. `006_label_overrides.sql` — print audit trail for the CFIA label
 
 In your Supabase project settings, make sure **"Automatically expose new tables"** is turned **off** — this project relies on explicit Row Level Security policies rather than blanket table exposure (see the comments in `001_initial_schema.sql` for why this also affects baseline grants).
 

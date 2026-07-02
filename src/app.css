@@ -1,0 +1,31 @@
+/* src/app.css */
+:root {
+  /* Colors — swap these per brand later, nothing else needs to change */
+  --color-bg: #1a1a1a;
+  --color-surface: #262626;
+  --color-text: #f0f0f0;
+  --color-text-muted: #a0a0a0;
+  --color-primary: #4a9eff;
+  --color-border: #3a3a3a;
+  --color-warning: orangered;
+
+  /* Spacing */
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 2rem;
+
+  /* Type */
+  --font-body: system-ui, sans-serif;
+  --font-heading: Georgia, serif;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+@media print {
+  .no-print {
+    display: none;
+  }
+}

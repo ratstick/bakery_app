@@ -3,7 +3,8 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { supabase } from '$lib/supabase.js';
-
+  import '../app.css';
+  
   let { children } = $props();
   let checked = $state(false);
   let session = $state(null);
@@ -38,7 +39,7 @@
 
 {#if checked}
 {#if session}
-  <nav>
+  <nav class="no-print">
     <span>Bakery App</span>
     <a href="/ingredients">Ingredients</a>
     <a href="/recipes">Recipes</a>

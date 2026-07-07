@@ -1,6 +1,8 @@
 <script>
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { supabase } from '$lib/supabase.js';
+  import { getAllTags, setIngredientTags, normalizeTagName } from '$lib/tags.js';
 
   // --- Shared ingredient fields ---
   let name = $state('');
@@ -38,7 +40,27 @@
   let errorMessage = $state('');
   let saving = $state(false);
 
-  
+  // --- Tags ---
+  let selectedTags = $state([]); // array of tag name strings
+  let tagInput = $state('');
+  let allTagNames = $state([]); // for the datalist autocomplete
+
+  onMount(async () => {
+    const tags = await getAllTags();
+    allTagNames = tags.map((t) => t.name);
+  });
+
+  function addTag() {
+    const normalized = normalizeTagName(tagInput);
+    if (normalized && !selectedTags.includes(normalized)) {
+      selectedTags = [...selectedTags, normalized];
+    }
+    tagInput = '';
+  }
+
+  function removeTag(name) {
+    selectedTags = selectedTags.filter((t) => t !== name);
+  }
 
   // Convert empty strings to null so optional numeric fields
   // don't get stored as invalid numbers in Postgres.
@@ -89,6 +111,16 @@
       errorMessage = ingredientError.message;
       saving = false;
       return;
+    }
+
+    if (selectedTags.length > 0) {
+      try {
+        await setIngredientTags(ingredient.id, selectedTags);
+      } catch (err) {
+        errorMessage = err.message;
+        saving = false;
+        return;
+      }
     }
 
     // Only insert a cost row if a price was entered
@@ -146,6 +178,36 @@
       <input type="checkbox" bind:checked={isLiquid} />
       This ingredient is a liquid
     </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Tags</legend>
+    <p>An ingredient can have multiple tags, e.g. peanut butter could be both "flavoring" and "nut butter".</p>
+
+    <div class="tag-chips">
+      {#each selectedTags as tag}
+        <span class="tag-chip">
+          {tag}
+          <button type="button" onclick={() => removeTag(tag)}>&times;</button>
+        </span>
+      {/each}
+    </div>
+
+    <label>
+      Add a tag
+      <input
+        type="text"
+        list="existing-tags"
+        bind:value={tagInput}
+        onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+      />
+      <datalist id="existing-tags">
+        {#each allTagNames as name}
+          <option value={name}></option>
+        {/each}
+      </datalist>
+    </label>
+    <button type="button" onclick={addTag}>Add Tag</button>
   </fieldset>
 
   <fieldset>

@@ -6,9 +6,9 @@ Built for a real client (a Toronto-based cottage bakery) on a $0 budget, using o
 
 ## Status
 
-**Live and in beta testing.** Every feature from the original project scope is built and working: ingredient management (manual entry, per-100g nutrition normalization, private per-user pricing, flexible units including cups/tbsp for solids and count-based ingredients like eggs, soft-delete archiving), recipe management with kitchen-unit conversion and duplicate-ingredient handling (rename or merge), live ingredient swapping with recalculated nutrition/cost, a printable CFIA-format nutrition label with an editable-values-before-printing flow and a print audit trail, and per-user inventory tracking with "not enough on hand" warnings on recipes.
+**Live and in beta testing.** Every feature from the original project scope is built and working: ingredient management (manual entry, per-100g nutrition normalization, private per-user pricing, flexible units including cups/tbsp for solids and count-based ingredients like eggs, soft-delete archiving, multi-tag categorization), recipe management with kitchen-unit conversion and duplicate-ingredient handling (rename or merge), live ingredient swapping with recalculated nutrition/cost, a printable CFIA-format nutrition label with an editable-values-before-printing flow and a print audit trail, per-user inventory tracking with "not enough on hand" warnings on recipes, and a full password reset / invite-based account setup flow.
 
-**Not yet built:** barcode scanning, Open Food Facts / nutrient database integrations, a USDA/FDA label format, public sign-up (currently invite-only via manual account creation), and password reset.
+**Not yet built:** barcode scanning, Open Food Facts / nutrient database integrations, a USDA/FDA label format, public sign-up (currently invite-only via manual account creation), and a real search/browse UI (currently just dropdowns and a "mine vs. shared" toggle).
 
 **Note on the nutrition label:** it uses the correct CFIA nutrients, layout, and % Daily Value formulas, but does not yet implement Health Canada's official per-nutrient rounding rules. It's intended as a strong starting point, not a certified-compliant label — see the disclaimer printed on the label itself, and the AI Usage statement below.
 
@@ -40,9 +40,11 @@ PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 
 Set up your Supabase project's database by running [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor — one file, sets up the complete current schema (tables, RLS, grants, indexes) in one shot.
 
-If you're curious how the schema got here, or want to understand the reasoning behind individual decisions, the full incremental history is preserved in [`supabase/sql/`](supabase/sql/) as 10 numbered migration files (`001` through `010`), each with comments explaining why that change was made. You don't need to run these for a fresh setup — `schema.sql` already reflects their combined end result.
+If you're curious how the schema got here, or want to understand the reasoning behind individual decisions, the full incremental history is preserved in [`supabase/sql/`](supabase/sql/) as 11 numbered migration files (`001` through `011`), each with comments explaining why that change was made. You don't need to run these for a fresh setup — `schema.sql` already reflects their combined end result.
 
 In your Supabase project settings, make sure **"Automatically expose new tables"** is turned **off** — this project relies on explicit Row Level Security policies rather than blanket table exposure (see the comments in `001_initial_schema.sql` for why this also affects baseline grants).
+
+Also under **Authentication → URL Configuration**, set your **Site URL** and add your app's `/reset-password` route (both your production domain and `http://localhost:5173` for local testing) to the **Redirect URLs** allowlist — this is required for password reset and invite emails to correctly land back on the app instead of erroring out.
 
 Then start the dev server:
 

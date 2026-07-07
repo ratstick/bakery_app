@@ -3,6 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { supabase } from '$lib/supabase.js';
+  import { getAllTags, getTagsForIngredient, setIngredientTags, normalizeTagName } from '$lib/tags.js';
 
   const ingredientId = $page.params.id;
 
@@ -47,6 +48,23 @@
   let purchasePrice = $state('');
   let purchaseQty = $state('');
   let purchaseUnit = $state('g');
+
+  // --- Tags ---
+  let selectedTags = $state([]);
+  let tagInput = $state('');
+  let allTagNames = $state([]);
+
+  function addTag() {
+    const normalized = normalizeTagName(tagInput);
+    if (normalized && !selectedTags.includes(normalized)) {
+      selectedTags = [...selectedTags, normalized];
+    }
+    tagInput = '';
+  }
+
+  function removeTag(name) {
+    selectedTags = selectedTags.filter((t) => t !== name);
+  }
 
   function numOrNull(value) {
     return value === '' ? null : Number(value);
@@ -121,6 +139,13 @@
       purchaseUnit = cost.purchase_unit || 'g';
     }
 
+    const [existingTags, tags] = await Promise.all([
+      getTagsForIngredient(ingredientId),
+      getAllTags()
+    ]);
+    selectedTags = existingTags.map((t) => t.name);
+    allTagNames = tags.map((t) => t.name);
+
     loading = false;
   });
 
@@ -159,6 +184,14 @@
 
     if (ingredientError) {
       errorMessage = ingredientError.message;
+      saving = false;
+      return;
+    }
+
+    try {
+      await setIngredientTags(ingredientId, selectedTags);
+    } catch (err) {
+      errorMessage = err.message;
       saving = false;
       return;
     }
@@ -217,6 +250,36 @@
       <label>Category <input type="text" bind:value={category} /></label>
       <label>Barcode <input type="text" bind:value={barcode} /></label>
       <label><input type="checkbox" bind:checked={isLiquid} /> This ingredient is a liquid</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Tags</legend>
+      <p>An ingredient can have multiple tags, e.g. peanut butter could be both "flavoring" and "nut butter".</p>
+
+      <div class="tag-chips">
+        {#each selectedTags as tag}
+          <span class="tag-chip">
+            {tag}
+            <button type="button" onclick={() => removeTag(tag)}>&times;</button>
+          </span>
+        {/each}
+      </div>
+
+      <label>
+        Add a tag
+        <input
+          type="text"
+          list="existing-tags"
+          bind:value={tagInput}
+          onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+        />
+        <datalist id="existing-tags">
+          {#each allTagNames as name}
+            <option value={name}></option>
+          {/each}
+        </datalist>
+      </label>
+      <button type="button" onclick={addTag}>Add Tag</button>
     </fieldset>
 
     <fieldset>

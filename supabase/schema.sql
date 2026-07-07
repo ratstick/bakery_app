@@ -6,7 +6,7 @@
 --
 -- The full incremental history (how this schema evolved, and why
 -- each change was made) lives in supabase/sql/001_*.sql through
--- 010_*.sql. That folder is a historical record, not something you
+-- 011_*.sql. That folder is a historical record, not something you
 -- need to run — this single file already reflects the end result
 -- of all of them combined.
 --
@@ -156,6 +156,29 @@ create table label_overrides (
   printed_at              timestamptz not null default now()
 );
 
+-- Shared/global tags, same philosophy as ingredients — one tag row
+-- exists once regardless of how many ingredients or users reference
+-- it. created_by is optional attribution only, not an ownership
+-- boundary. Tag names are stored lowercase (normalized in the app
+-- layer) to avoid "Nut Butter" and "nut butter" existing as two
+-- separate tags.
+create table tags (
+  id          uuid        primary key default gen_random_uuid(),
+  name        text        not null unique,
+  created_by  uuid        references auth.users(id) default auth.uid(),
+  created_at  timestamptz not null default now()
+);
+
+-- Many-to-many: one ingredient can have many tags (e.g. peanut butter
+-- can be both "flavoring" and "nut butter" at once), one tag can
+-- apply to many ingredients. No surrogate id — the pair is the key.
+create table ingredient_tags (
+  ingredient_id uuid not null references ingredients(id) on delete cascade,
+  tag_id        uuid not null references tags(id) on delete cascade,
+
+  primary key (ingredient_id, tag_id)
+);
+
 
 -- ============================================================
 -- AUTO-UPDATE updated_at ON RECIPES
@@ -178,8 +201,9 @@ create trigger recipes_updated_at
 -- ============================================================
 -- ROW LEVEL SECURITY
 --
--- ingredients: shared/global — any authenticated user can read and
--- contribute. Everything else is private per-user.
+-- ingredients, tags, ingredient_tags: shared/global — any
+-- authenticated user can read and contribute. Everything else is
+-- private per-user.
 -- ============================================================
 
 alter table ingredients            enable row level security;
@@ -188,6 +212,8 @@ alter table recipe_ingredients     enable row level security;
 alter table inventory              enable row level security;
 alter table user_ingredient_costs  enable row level security;
 alter table label_overrides        enable row level security;
+alter table tags                   enable row level security;
+alter table ingredient_tags        enable row level security;
 
 create policy "authenticated users only" on ingredients
   for all using (auth.role() = 'authenticated');
@@ -204,4 +230,52 @@ create policy "users manage their own inventory" on inventory
   for all using (auth.uid() = user_id);
 
 create policy "users manage their own ingredient costs" on user_ingredient_costs
-  for
+  for all using (auth.uid() = user_id);
+
+create policy "users view their own label history" on label_overrides
+  for select using (auth.uid() = user_id);
+
+create policy "users insert their own label history" on label_overrides
+  for insert with check (auth.uid() = user_id);
+
+create policy "authenticated users only" on tags
+  for all using (auth.role() = 'authenticated');
+
+create policy "authenticated users only" on ingredient_tags
+  for all using (auth.role() = 'authenticated');
+
+
+-- ============================================================
+-- GRANTS
+--
+-- IMPORTANT: this project has "Automatically expose new tables"
+-- turned OFF in Supabase (intentional — explicit RLS, not blanket
+-- exposure). That setting also controls whether the `authenticated`
+-- role gets baseline table privileges at all. Without these grants,
+-- every query fails with "permission denied" even when RLS policies
+-- look correct — RLS is checked AFTER these grants, not instead of
+-- them. If you create this project fresh, make sure that Supabase
+-- setting is off, and that these grants are run.
+-- ============================================================
+
+grant select, insert, update, delete on ingredients            to authenticated;
+grant select, insert, update, delete on recipes                 to authenticated;
+grant select, insert, update, delete on recipe_ingredients      to authenticated;
+grant select, insert, update, delete on inventory                to authenticated;
+grant select, insert, update, delete on user_ingredient_costs    to authenticated;
+grant select, insert                on label_overrides           to authenticated;
+grant select, insert, update, delete on tags                     to authenticated;
+grant select, insert, delete         on ingredient_tags           to authenticated;
+
+
+-- ============================================================
+-- INDEXES
+-- ============================================================
+
+create index idx_recipe_ingredients_recipe_id       on recipe_ingredients(recipe_id);
+create index idx_inventory_ingredient_id            on inventory(ingredient_id);
+create index idx_ingredients_barcode                on ingredients(barcode);
+create index idx_ingredients_archived               on ingredients(archived);
+create index idx_user_ingredient_costs_ingredient_id on user_ingredient_costs(ingredient_id);
+create index idx_label_overrides_recipe_id          on label_overrides(recipe_id);
+create index idx_ingredient_tags_tag_id             on ingredient_tags(tag_id);

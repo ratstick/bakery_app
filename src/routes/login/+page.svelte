@@ -8,20 +8,31 @@
   let loading = $state(false);
 
   async function handleLogin() {
-    loading = true;
-    errorMessage = '';
+  loading = true;
+  errorMessage = '';
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    loading = false;
+  loading = false;
 
-    if (error) {
-      errorMessage = error.message;
-      return;
-    }
-
-    goto('/');
+  if (error) {
+    errorMessage = error.message;
+    return;
   }
+
+  goto('/');
+}
+
+async function handleForgotPassword() {
+  if (!email) {
+    errorMessage = 'Enter your email above first, then click "Forgot password."';
+    return;
+  }
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`
+  });
+  errorMessage = error ? error.message : 'Check your email for a reset link.';
+}
 </script>
 
 <h1>Log In</h1>
@@ -37,9 +48,12 @@
     <input type="password" bind:value={password} required />
   </label>
 
+  <button type="button" onclick={handleForgotPassword}>Forgot password?</button>
+
   {#if errorMessage}
     <p class="error">{errorMessage}</p>
   {/if}
+
 
   <button type="submit" disabled={loading}>
     {loading ? 'Logging in...' : 'Log In'}

@@ -13,13 +13,15 @@
     const { data } = await supabase.auth.getSession();
     session = data.session;
 
-    const onLoginPage = $page.url.pathname === '/login';
+const path = $page.url.pathname;
+const onLoginPage = path === '/login';
+const onResetPasswordPage = path === '/reset-password';
 
-    if (!session && !onLoginPage) {
-      goto('/login');
-    } else if (session && onLoginPage) {
-      goto('/');
-    }
+if (!session && !onLoginPage && !onResetPasswordPage) {
+  goto('/login');
+} else if (session && onLoginPage) {
+  goto('/');
+}
 
     checked = true;
 
